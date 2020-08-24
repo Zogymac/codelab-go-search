@@ -5,38 +5,48 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 )
 
 var (
-	recursiveFlag = flag.Bool("r", false, "recursive search: for directories")
+	recursiveFlag = flag.Bool("r", true, "recursive search: for directories")
+	nFlag         = flag.Bool("n", false, "line number on which the entry was found")
 )
 
 type ScanResult struct {
 	file       string
-	lineNumber int
-	line       string
+	lineNumber []int
+	line       []string
 }
 
-func scanFile(fpath, pattern string) ([]string, error) {
+func scanFile(fpath, pattern string) (ScanResult, error) {
 	f, err := os.Open(fpath)
 	if err != nil {
-		return nil, err
+		return ScanResult{}, err
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
 	scanner.Split(bufio.ScanLines)
 	result := make([]string, 0)
+	index := make([]int, 0)
+	i := 0 //0
 	for scanner.Scan() {
+		i++
 		line := scanner.Text()
-		if strings.Contains(line, pattern) {
+		contains := strings.Contains(line, pattern)
+		if contains {
+			index = append(index, i)
 			result = append(result, line)
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return ScanResult{}, err
 	}
-	return result, nil
+	//return ScanResult{}, nil
+	scanEnd := ScanResult{fpath, index, result}
+	return scanEnd, nil
 }
 
 func exit(format string, val ...interface{}) {
@@ -54,13 +64,43 @@ func processFile(fpath string, pattern string) {
 	if err != nil {
 		exit("Error scanning %s: %s", fpath, err.Error())
 	}
-	for _, line := range res {
-		fmt.Println(line)
+	/*
+		for _, line := range res {
+			fmt.Println(line)
+		}*/
+	for i, _ := range res.line {
+		if *nFlag {
+			fmt.Print(fpath, ":", strconv.Itoa(res.lineNumber[i]), ":", res.line[i], "\n")
+		} else {
+			fmt.Print(fpath, ":", res.line[i], "\n")
+		}
 	}
 }
+func walkFunc(path string, info os.FileInfo, err error, pattern string) error {
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return nil
+	}
+	fmt.Println(info.Name())
+	scanFile(path, pattern)
 
+	return nil
+}
 func processDirectory(dir string, pattern string) {
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		//res, nil := scanFile(dir, pattern)
+		if !info.IsDir() {
+			//fmt.Println(path)
+			processFile(path, pattern)
+		}
 
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
 }
 
 func main() {
